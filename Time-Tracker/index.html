@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Tracking Application</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .time-slot {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .time-slot:hover {
+            background-color: #f0f0f0;
+        }
+        .time-slot.selected {
+            background-color: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        .remarks-container {
+            margin-top: 20px;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            resize: vertical;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .entries {
+            margin-top: 30px;
+        }
+        .entry {
+            background-color: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .entry-time {
+            font-weight: bold;
+            color: #333;
+        }
+        .entry-remarks {
+            margin-top: 5px;
+            color: #555;
+        }
+        .export-import {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Time Tracking</h1>
+        
+        <div class="time-slots" id="timeSlots">
+            <!-- Time slots will be generated here -->
+        </div>
+        
+        <div class="remarks-container">
+            <h3>Remarks</h3>
+            <textarea id="remarks" placeholder="Enter what you did during this time..."></textarea>
+            <button id="saveBtn">Save Entry</button>
+        </div>
+        
+        <div class="export-import">
+            <button id="exportBtn">Export Data</button>
+            <button id="importBtn">Import Data</button>
+            <input type="file" id="fileInput" style="display: none;" accept=".json">
+        </div>
+        
+        <div class="entries" id="entries">
+            <h2>Your Time Entries</h2>
+            <!-- Entries will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        // Initialize data
+        let timeEntries = JSON.parse(localStorage.getItem('timeEntries')) || [];
+        
+        // Generate time slots for the last 8 hours in 30-minute increments
+        function generateTimeSlots() {
+            const timeSlotsContainer = document.getElementById('timeSlots');
+            timeSlotsContainer.innerHTML = '';
+            
+            const now = new Date();
+            const eightHoursAgo = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+            
+            // Round down to the nearest 30 minutes
+            eightHoursAgo.setMinutes(Math.floor(eightHoursAgo.getMinutes() / 30) * 30);
+            eightHoursAgo.setSeconds(0);
+            eightHoursAgo.setMilliseconds(0);
+            
+            let currentTime = new Date(eightHoursAgo);
+            let selectedSlot = null;
+            
+            while (currentTime <= now) {
+                const slotTime = new Date(currentTime);
+                const slotElement = document.createElement('div');
+                slotElement.className = 'time-slot';
+                slotElement.textContent = formatTime(slotTime);
+                
+                // Check if this slot already has an entry
+                const hasEntry = timeEntries.some(entry => 
+                    new Date(entry.startTime).getTime() === slotTime.getTime()
+                );
+                
+                if (hasEntry) {
+                    slotElement.classList.add('selected');
+                    slotElement.style.backgroundColor = '#2196F3';
+                }
+                
+                slotElement.addEventListener('click', () => {
+                    // Deselect previous selection
+                    if (selectedSlot) {
+                        selectedSlot.classList.remove('selected');
+                    }
+                    
+                    // Select new slot if it doesn't have an entry
+                    if (!hasEntry) {
+                        slotElement.classList.add('selected');
+                        selectedSlot = slotElement;
+                        document.getElementById('remarks').value = '';
+                    } else {
+                        selectedSlot = null;
+                        // Load existing remarks if clicked on an entry
+                        const existingEntry = timeEntries.find(entry => 
+                            new Date(entry.startTime).getTime() === slotTime.getTime()
+                        );
+                        document.getElementById('remarks').value = existingEntry.remarks;
+                    }
+                });
+                
+                timeSlotsContainer.appendChild(slotElement);
+                currentTime.setMinutes(currentTime.getMinutes() + 30);
+            }
+        }
+        
+        // Format time for display
+        function formatTime(date) {
+            let hours = date.getHours();
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // the hour '0' should be '12'
+            return `${hours}:${minutes} ${ampm}`;
+        }
+        
+        // Display existing entries
+        function displayEntries() {
+            const entriesContainer = document.getElementById('entries');
+            entriesContainer.innerHTML = '<h2>Your Time Entries</h2>';
+            
+            if (timeEntries.length === 0) {
+                entriesContainer.innerHTML += '<p>No entries yet. Select a time slot and add remarks to get started.</p>';
+                return;
+            }
+            
+            // Sort entries by time (newest first)
+            const sortedEntries = [...timeEntries].sort((a, b) => 
+                new Date(b.startTime) - new Date(a.startTime)
+            );
+            
+            sortedEntries.forEach(entry => {
+                const entryElement = document.createElement('div');
+                entryElement.className = 'entry';
+                
+                const startTime = new Date(entry.startTime);
+                const endTime = new Date(startTime.getTime() + (30 * 60 * 1000));
+                
+                entryElement.innerHTML = `
+                    <div class="entry-time">${formatTime(startTime)} - ${formatTime(endTime)}</div>
+                    <div class="entry-remarks">${entry.remarks}</div>
+                `;
+                
+                entriesContainer.appendChild(entryElement);
+            });
+        }
+        
+        // Save entry
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            const selectedSlot = document.querySelector('.time-slot.selected');
+            const remarks = document.getElementById('remarks').value.trim();
+            
+            if (!selectedSlot) {
+                alert('Please select a time slot first.');
+                return;
+            }
+            
+            if (!remarks) {
+                alert('Please enter remarks for this time slot.');
+                return;
+            }
+            
+            // Parse the time from the slot text
+            const slotText = selectedSlot.textContent;
+            const [timePart, ampm] = slotText.split(' ');
+            let [hours, minutes] = timePart.split(':').map(Number);
+            
+            // Convert to 24-hour format
+            if (ampm === 'PM' && hours !== 12) {
+                hours += 12;
+            } else if (ampm === 'AM' && hours === 12) {
+                hours = 0;
+            }
+            
+            // Create date object for the slot (today at this time)
+            const now = new Date();
+            const slotTime = new Date(
+                now.getFullYear(),
+                now.getMonth(),
+                now.getDate(),
+                hours,
+                minutes
+            );
+            
+            // Check if this is within the last 8 hours
+            const eightHoursAgo = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+            if (slotTime < eightHoursAgo) {
+                alert('You can only add entries for the last 8 hours.');
+                return;
+            }
+            
+            // Check if this slot already has an entry
+            const existingIndex = timeEntries.findIndex(entry => 
+                new Date(entry.startTime).getTime() === slotTime.getTime()
+            );
+            
+            if (existingIndex >= 0) {
+                // Update existing entry
+                timeEntries[existingIndex].remarks = remarks;
+            } else {
+                // Add new entry
+                timeEntries.push({
+                    startTime: slotTime.toISOString(),
+                    remarks: remarks
+                });
+            }
+            
+            // Save to localStorage
+            localStorage.setItem('timeEntries', JSON.stringify(timeEntries));
+            
+            // Refresh display
+            generateTimeSlots();
+            displayEntries();
+            
+            // Clear selection and remarks
+            selectedSlot.classList.remove('selected');
+            document.getElementById('remarks').value = '';
+        });
+        
+        // Export data
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (timeEntries.length === 0) {
+                alert('No data to export.');
+                return;
+            }
+            
+            const dataStr = JSON.stringify(timeEntries, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `time-entries-${new Date().toISOString().slice(0,10)}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        });
+        
+        // Import data
+        document.getElementById('importBtn').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+        
+        document.getElementById('fileInput').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) {
+                        if (confirm('This will replace your current time entries. Continue?')) {
+                            timeEntries = importedData;
+                            localStorage.setItem('timeEntries', JSON.stringify(timeEntries));
+                            generateTimeSlots();
+                            displayEntries();
+                            alert('Data imported successfully!');
+                        }
+                    } else {
+                        alert('Invalid data format. Expected an array of time entries.');
+                    }
+                } catch (error) {
+                    alert('Error parsing JSON file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+            
+            // Reset file input
+            event.target.value = '';
+        });
+        
+        // Initialize the app
+        generateTimeSlots();
+        displayEntries();
+    </script>
+</body>
+</html>
